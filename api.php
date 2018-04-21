@@ -1,5 +1,4 @@
 <?php
-    
 	/* 
 		This is an example class script proceeding secured API
 		To use this class you should keep same as query string and function name
@@ -111,16 +110,17 @@
 			/*if($this->get_request_method() != "POST"){
 				$this->response('',406);
 			}*/
-			if (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION']))
+			//$basicauth = explode(" ",$_SERVER['REDIRECT_HTTP_AUTHORIZATION']);
+			if (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])){
 				$basicauth = explode(" ",$_SERVER['REDIRECT_HTTP_AUTHORIZATION']);
-			elseif (isset($_SERVER['HTTP_AUTHORIZATION'])) 
+			}elseif (isset($_SERVER['HTTP_AUTHORIZATION'])){ 
 				$basicauth = explode(" ",$_SERVER['HTTP_AUTHORIZATION']);
+			}	
 			/*$email = $this->_request['email'];		
 			$password = $this->_request['pwd'];*/
 			$file = fopen("auth.csv","r");
 			
-			//print_r ($basicauth);
-			//print_r(getAllHeaders());
+			
 			$login = false;
 			while (($line = fgetcsv($file)) !== FALSE) {
 				$auth = base64_encode(implode(":",$line));
@@ -152,115 +152,69 @@
 		}
 
 
-		private function CallInitiated(){
+		private function Masking(){
 			// Cross validation if the request method is GET else it will return "Not Acceptable" status
 			if($this->get_request_method() != "POST"){
 				$this->response('',406);
 				$data = array();
 			}else{
 				$data = json_decode(file_get_contents('php://input'), true);
-			
 					if(!$this->checkparams($data)){
-						$response['status']=" Invalid order";
+						$response['status']=" Invalid Request";
+						$this->response($this->json($response),400);
+					}
+			}
+			$mask_number = $data['mask_number'];
+			$response['dial'] = db_get_field("select phone from ?:mask_numbers where mask_number=".$mask_number." AND phone>0");
+			$response['dial'] = ($response['dial']!="")?$response['dial']:buyerSupportNumber;
+			if(isset($response['dial']) && $response['dial']!=""){
+				$response['status'] = 200;
+				$this->response($this->json($response),200);
+			}else{
+				$response['status'] = 400;
+				$this->response($this->json($response),400);
+			}
+				// If no records "No Content" status
+		}
+
+		private function Circlewise(){
+			// Cross validation if the request method is GET else it will return "Not Acceptable" status
+			if($this->get_request_method() != "POST"){
+				$this->response('',406);
+				$data = array();
+			}else{
+				$data = json_decode(file_get_contents('php://input'), true);
+					if(!$this->checkparams($data)){
+						$response['status']=" Invalid Request";
 						$this->response($this->json($response),400);
 					}
 			}
 			
-			$statusarray = array("A","AB","AC","AD","AE","AF","AG","AH","AL","AJ","AK","AL","AM","AN","AO","AP","AQ","AR","ST","AT","AU","AV","AW"
-				,"AX","AY","AZ","BC","BD","BE","BF","BG","BH","BI","BU","BV","BW","BX","BZ","CA","CC","CB","CD","CE","CK","CL","CT","CV","CW",
-				"CY","CZ","D","E","F","G","H","J","OS","OT","OU","OV","S","U","X","Z");
-			if(isset($data['session_id']) && isset($data['order_id'])){
-				/*$orderstatus = db_get_row("SELECT orders.order_id,statuses.description FROM ?:orders as orders
-						INNER JOIN ?:status_descriptions as statuses ON statuses.status=orders.status AND statuses.type='O'	
-						WHERE orders.order_id =".$data['order_id']);*/
-						$orderstatus = db_get_row("SELECT order_id,status FROM ?:orders
-						WHERE order_id =".$data['order_id']);
-						if($data['test']){
-							print_r($orderstatus);
-						}
-						
-						if($orderstatus['order_id']>0){
-							$response['order_status'] =  $orderstatus['status'];
-							$response['status'] =  "success";
-						
-						}else{
-							$response['status']="false";
-							$response['msg']="No content found";
-							$this->response($this->json($response),206);
-						}
-			}elseif(isset($data['session_id']) && isset($data['phone']) && isset($data['previous_order'])){
-				$sql = db_get_row("SELECT users.user_id,users.firstname,count(order_id) as ordercount FROM ?:users as users
-				LEFT JOIN ?:orders as orders ON orders.user_id = users.user_id AND orders.status IN('".implode("','",$statusarray)."')
-				 WHERE users.phone ='".$data['phone']."'");
-					/*if($data['test']){
-						$sql = db_get_row("SELECT users.user_id,users.firstname,count(order_id) as ordercount FROM ?:users as users
-						LEFT JOIN ?:orders as orders ON orders.user_id = users.user_id AND orders.status IN('".implode("','",$statusarray)."')
-						WHERE users.phone ='".$data['phone']."'");
-							print_r($sql);
-						}*/
-				$response = array();
-				if($sql['user_id']>0){	
-					if($sql['ordercount']==1){
-						/*$orderstatus = db_get_row("SELECT orders.user_id,orders.order_id,statuses.description FROM ?:orders as orders
-						INNER JOIN ?:status_descriptions as statuses ON statuses.status=orders.status AND statuses.type='O'	
-						WHERE orders.user_id ='".$sql['user_id']."' order by order_id DESC");*/
-						$orderstatus = db_get_row("SELECT user_id,order_id,status FROM ?:orders WHERE user_id =".$sql['user_id']);
-						$response['order_status'] =  $orderstatus['status'];
-					}elseif($sql['ordercount']>1){
-						/*$orderstatus = db_get_row("SELECT orders.user_id,orders.order_id,statuses.description FROM ?:orders as orders
-						INNER JOIN ?:status_descriptions as statuses ON statuses.status=orders.status AND statuses.type='O'	
-						WHERE orders.user_id =".$sql['user_id']." AND orders.status IN('".implode("','",$statusarray)."') order by order_id DESC");*/
-						
-							if(isset($data['previous_order']) && $data['previous_order']>=1){
-								$limit1 = $data['previous_order'];
-								$orderstatus = db_get_row("SELECT user_id,order_id,status FROM ?:orders
-								WHERE user_id =".$sql['user_id']." AND status IN('".implode("','",$statusarray)."') order by order_id DESC limit ".$limit1.",1");
-								
-							}else{
-								$orderstatus = db_get_row("SELECT user_id,order_id,status FROM ?:orders
-						WHERE user_id =".$sql['user_id']." AND status IN('".implode("','",$statusarray)."') order by order_id DESC");
-							}
-						
-						
-						
-						
-						$response['order_id'] = $orderstatus['order_id'];
-						$response['order_status'] =  $orderstatus['status'];
-					}else{
-						$response['status']="success";
-						$response['msg']="No content found";
-						$this->response($this->json($response),206);
-					}
-					$response['valid_phone']=true;
-					$response['order_count'] = $sql['ordercount'];
-					$response['data']=array("username"=>$sql['firstname']);
-					$response['status'] = "success";
-						
-				}else{
-					$response['valid_phone']=false;
-					$response['status'] = "false";
-					$response['msg'] = "Invalid phone";
-				}
-				
+			$circle_number = $data['circle_number'];
+			$pin_number = $data['pin'];
+			$response['dial'] = db_get_field("select phone from ?:circle_numbers where circle_number=".$circle_number." AND pin=".$pin_number);
+			
+			$response['dial'] = ($response['dial']!="")?$response['dial']:buyerSupportNumber;
+			if(isset($response['dial']) && $response['dial']!=""){
+				$response['status'] = 200;
+				$this->response($this->json($response),200);
 			}else{
-				$response['valid_phone']=false;
-				$response['status'] = "false";
-				$response['msg'] = "Bad request";
+				$response['status'] = 400;
 				$this->response($this->json($response),400);
 			}
-			$this->response($this->json($response),200);
 				// If no records "No Content" status
 		}
-
 		
 		
 		private function checkparams($request_params){
 			$check =true;
-			$params = array('session_id','order_id','phone','previous_order','test');
-			foreach($request_params as $paramskey=>$rparams){
-				if (!in_array($paramskey, $params)) {
-					$check =false;
-				}
+			$request_params = array_keys($request_params);
+			$params = array('mask_number','circle_number','pin');
+			
+			if (array_intersect($request_params, $params) == $request_params) {
+				$check =true;
+			}else{
+				$check =false;
 			}
 			return $check;
 		}
